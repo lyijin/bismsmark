@@ -1,0 +1,271 @@
+"""
+> Snakefile for `bismsmark` <
+
+Pipeline aims to automate steps from genome prep to bismark mapping.
+
+Asterisks denote which files are mandatory for autogeneration to work.
+Curly brackets == replaceable/optional strings.
+
+config/
+|-- samples.tsv            (*)
+      (run `autogenerate_samples_tsv.py` after placing data in folders)
+
+workflow/
+|-- Snakefile              (*)
+|
+|-- 00_raw_reads/          (*)
+|   |-- *_R1.fastq.gz      (*)
+|   +-- *_R2.fastq.gz      (*)
+|
++-- data/                  (*)
+    |-- {genome1}/         (*)
+    |   | (genome names are derived from directory names)
+    |   +-- {genome1}.fa   (*)
+    |         (genome must be uncompressed FASTA)
+    |-- {genome2}/
+    |   +-- {genome2}.fa
+    |-- {genomeN}/
+        +-- {genomeN}.fa
+
+Usage notes
+  0. Please run `autogenerate_samples_tsv.py`, and visually check "samples.tsv"
+     before running `snakemake`
+  1. Reads MUST look like *_R1.fastq.gz or *_R2.fastq.gz. Not _1, not .R1
+  2. Genome files must be uncompressed plaintext FASTA; filenames are
+     unimportant, but must end with ".fa"
+"""
+import csv
+from pathlib import Path
+
+# create dict to store contents of "samples.tsv"
+sample_details = {}
+tsv_reader = csv.reader(open('../config/samples.tsv'), delimiter='\t')
+for line in tsv_reader:
+    # skip commented lines
+    if line[0][0] == '#': continue
+    
+    # non-comment lines: populate sample_details
+    sample_id, short_id, library_type, R1_file, R2_file, mapped_genome, score_min = line[:7]
+    
+    # sanity check, crash noisily if weirdness detected
+    assert library_type in ['bsseq', 'emseq', 'swift'], \
+        f'Library type "{library_type}" is not a supported value!'
+    assert Path(f'00_raw_reads/{R1_file}').is_file(), \
+        f'R1 file "{R1_file}" does not exist!'
+    assert Path(f'00_raw_reads/{R2_file}').is_file(), \
+        f'R2 file "{R2_file}" does not exist!'
+    assert Path(f'data/{mapped_genome}').is_dir(), \
+        f'Genome "{mapped_genome}" does not exist in "data/"!'
+    
+    if sample_id not in sample_details:
+        sample_details[sample_id] = {'short_id': short_id,
+                                     'library_type': library_type,
+                                     'R1_file': R1_file,
+                                     'R2_file': R2_file,
+                                     'mapped_genome': {mapped_genome: score_min}}
+    else:
+        assert short_id == sample_details[sample_id]['short_id']
+        assert library_type == sample_details[sample_id]['library_type']
+        assert R1_file == sample_details[sample_id]['R1_file']
+        assert R2_file == sample_details[sample_id]['R2_file']
+        assert mapped_genome not in sample_details[sample_id]['mapped_genome']
+        
+        sample_details[sample_id]['mapped_genome'][mapped_genome] = score_min
+
+# define a couple of vars that will be used in "rule all"
+genome_fastas = [str(x) for x in Path('.').glob('data/*/*.fa')]
+genomes = sorted(list(set(
+    y for x in sample_details for y in sample_details[x]['mapped_genome'])))
+sample_ids = sorted(list(set(x for x in sample_details)))
+
+rule all:
+    # this catch-all rule automates the creation of necessary input files for
+    # the entire pipeline to run (e.g. converted genomes, trimmed FASTQs, ...)
+    input:
+        # checks for indexed fasta file (fai)
+        expand('{genome_fastas}.fai', genome_fastas=genome_fastas),
+        
+        # checks for conversion of reference genome(s)
+        expand('data/{genome}/done.txt', genome=genomes),
+        
+        # checks for trimmed reads
+        expand('01_trimmed_reads/{sample}_R1_val_1.fq.gz', sample=sample_ids),
+        
+        # checks for mapped BAM
+        [expand('02_map_vs_{genome}/{sample}_R1_val_1_bismark_bt2_pe.bam',
+                genome=sample_details[sample]['mapped_genome'].keys(),
+                sample=sample) for sample in sample_details],
+        
+        # checks for dedup BAM
+        [expand('03_dedup_{genome}/{sample}_R1_val_1_bismark_bt2_pe.deduplicated.bam',
+                genome=sample_details[sample]['mapped_genome'].keys(),
+                sample=sample) for sample in sample_details],
+        
+        # checks for cov files produced from `bismark_methylation_extractor`
+        [expand('04_meth_extract_{genome}/{sample}_R1_val_1_bismark_bt2_pe.deduplicated.bismark.cov.gz',
+                genome=sample_details[sample]['mapped_genome'].keys(),
+                sample=sample) for sample in sample_details],
+        
+        # checks for renamed cov files
+        [expand('05_renamed_covs/{sample}.{genome}.cov.gz',
+                genome=sample_details[sample]['mapped_genome'].keys(),
+                sample=sample) for sample in sample_details],
+
+rule create_converted_genome:
+    input:
+        'data/{genome}/'
+    output:
+        'data/{genome}/done.txt'
+    log:
+        out='logs/bismark_genome_preparation/{genome}.stdout',
+        err='logs/bismark_genome_preparation/{genome}.stderr'
+    threads: 4
+    resources:
+        time_min=1440,
+        mem_mb=48000,
+        cpus=4
+    priority: 99
+    shell:
+        'bismark_genome_preparation {input} > {log.out} 2> {log.err} && touch {output}'
+
+rule create_faidx:
+    input:
+        'data/{genome}/{genome_file}.fa'
+    output:
+        'data/{genome}/{genome_file}.fa.fai'
+    threads: 1
+    resources:
+        time_min=720,
+        mem_mb=8000,
+        cpus=1
+    shell:
+        'samtools faidx {input}'
+
+rule trim_reads:
+    # note that files MUST be in the pattern "{sample}_R1.fastq.gz" and
+    # "{sample}_R2.fastq.gz". too much of a headache to deal with potential
+    # variations e.g. .R1, _1, .1
+    #
+    # merge files and use `mv` or `rename` prior to running this pipeline,
+    # and make sure raw files are write-protected
+    input:
+        R1='00_raw_reads/{sample}_R1.fastq.gz',
+        R2='00_raw_reads/{sample}_R2.fastq.gz'
+    output:
+        R1='01_trimmed_reads/{sample}_R1_val_1.fq.gz',
+        R2='01_trimmed_reads/{sample}_R2_val_2.fq.gz'
+    log:
+        out='logs/01_trimmed_reads/{sample}.stdout',
+        err='logs/01_trimmed_reads/{sample}.stderr'
+    params:
+        library_type=lambda wildcards: sample_details[wildcards.sample]['library_type']
+    threads: 8
+    resources:
+        time_min=720,
+        mem_mb=12000,
+        cpus=12
+    run:
+        if params.library_type == 'swift':
+            # the --clip_xx and --three_prime_clip_xx values are set based on
+            # https://github.com/FelixKrueger/Bismark/tree/master/Docs
+            shell('trim_galore --paired {input.R1} {input.R2} --output_dir 01_trimmed_reads/'
+                  ' --clip_r1 10 --clip_r2 15 --three_prime_clip_r1 10 --three_prime_clip_r2 10'
+                  ' --cores {threads} > {log.out} 2> {log.err}')
+        elif params.library_type in ['emseq', 'bsseq']:
+            shell('trim_galore --paired {input.R1} {input.R2} --output_dir 01_trimmed_reads/'
+                  ' --cores {threads} > {log.out} 2> {log.err}')
+
+rule map_vs_converted_genome:
+    input:
+        genome='data/{genome}',
+        genome_done='data/{genome}/done.txt',
+        R1='01_trimmed_reads/{sample}_R1_val_1.fq.gz',
+        R2='01_trimmed_reads/{sample}_R2_val_2.fq.gz'
+    output:
+        R1='02_map_vs_{genome}/{sample}_R1_val_1_bismark_bt2_pe.bam'
+    log:
+        out='logs/02_map_vs_{genome}/{sample}.stdout',
+        err='logs/02_map_vs_{genome}/{sample}.stderr'
+    params:
+        score_min=lambda wildcards: sample_details[wildcards.sample]['mapped_genome'][wildcards.genome]
+    threads: 5
+    resources:
+        time_min=4320,
+        mem_mb=64000,
+        cpus=16
+    run:
+        # key parameter "score_min" can be different depending on genome
+        # also note each "thread" in --parallel needs 3 cores
+        shell('bismark {input.genome} --bowtie2 -1 {input.R1} -2 {input.R2}'
+              ' --score_min L,0,{params.score_min}'
+              ' --output_dir 02_map_vs_{wildcards.genome}'
+              ' --temp_dir 02_map_vs_{wildcards.genome}'
+              ' --parallel {threads} --gzip --bam > {log.out} 2> {log.err}')
+
+rule deduplicate_bam:
+    input:
+        '02_map_vs_{genome}/{sample}_R1_val_1_bismark_bt2_pe.bam'
+    output:
+        '03_dedup_{genome}/{sample}_R1_val_1_bismark_bt2_pe.deduplicated.bam'
+    log:
+        out='logs/03_dedup_{genome}/{sample}.stdout',
+        err='logs/03_dedup_{genome}/{sample}.stderr'
+    threads: 2
+    resources:
+        time_min=1440,
+        mem_mb=128000,
+        cpus=3
+    run:
+        shell('deduplicate_bismark --bam --paired {input}'
+              ' --output_dir 03_dedup_{wildcards.genome}'
+              ' > {log.out} 2> {log.err}')
+
+rule extract_methylation_levels:
+    input:
+        '03_dedup_{genome}/{sample}_R1_val_1_bismark_bt2_pe.deduplicated.bam'
+    output:
+        protected('04_meth_extract_{genome}/{sample}_R1_val_1_bismark_bt2_pe.deduplicated.bismark.cov.gz'),
+        temp('04_meth_extract_{genome}/{sample}_R1_val_1_bismark_bt2_pe.deduplicated.bedGraph.gz'),
+    log:
+        out='logs/04_meth_extract_{genome}/{sample}.stdout',
+        err='logs/04_meth_extract_{genome}/{sample}.stderr'
+    params:
+        library_type=lambda wildcards: sample_details[wildcards.sample]['library_type']
+    threads: 4
+    resources:
+        time_min=5760,
+        mem_mb=24000,
+        cpus=12
+    run:
+        # note: "--parallel" is ~3x lower than cores requested on purpose;
+        #       each instance consumes multiple threads and cores
+        if params.library_type == 'swift':
+            shell('bismark_methylation_extractor {input} --bedGraph'
+                  ' --output 04_meth_extract_{wildcards.genome}'
+                  ' --parallel {threads} --scaffolds --gzip'
+                  ' > {log.out} 2> {log.err}')
+        elif params.library_type in ['emseq', 'bsseq']:
+            # the --ignore_r2 values are set based on
+            # https://github.com/FelixKrueger/Bismark/tree/master/Docs
+            shell('bismark_methylation_extractor {input} --bedGraph --ignore_r2 2'
+                  ' --output 04_meth_extract_{wildcards.genome}'
+                  ' --parallel {threads} --scaffolds --gzip'
+                  ' > {log.out} 2> {log.err}')
+        
+        # remove unneeded huge files at the end of command
+        shell('rm -f 04_meth_extract_{wildcards.genome}/C??_O?_{wildcards.sample}_R1_val_1_bismark_bt2_pe.deduplicated.txt*')
+
+rule rename_covs:
+    # uses softlinks to rename cov files into something shorter, and
+    # centralises all cov files in a single folder
+    input:
+        '04_meth_extract_{genome}/{sample}_R1_val_1_bismark_bt2_pe.deduplicated.bismark.cov.gz'
+    output:
+        '05_renamed_covs/{sample}.{genome}.cov.gz'
+    threads: 1
+    resources:
+        time_min=1,
+        mem_mb=100,
+        cpus=1
+    shell:
+        'ln -s ../{input} {output}'

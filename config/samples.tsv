@@ -1,0 +1,15 @@
+## sample_id: do not alter from autodetected defaults; will contain everything
+##            up to _R1/_R2
+## short_id: user-editable, default rule is sample_id.split('_')[:-1]. 
+##           used in the final rule to create symbolic links in "05_renamed_covs/"
+## library_type: one of ['bsseq', 'emseq', 'swift']
+## R1_file: do not alter from autodetected defaults
+## R2_file: do not alter from autodetected defaults
+## mapped_genome: by default, prefills all folders in "data/"; reduce to taste
+## score_min: `bismark` default is "--score_min L,0,-0.2". autogenerator tries
+##            to guess best value from genome name, but change to taste.
+##            each genome can only have ONE score_min
+##
+#sample_id	short_id	library_type	R1_file	R2_file	mapped_genome	score_min
+test	test1	bsseq	test_R1.fastq.gz	test_R2.fastq.gz	hsap_45s	-0.6
+test2	test2	bsseq	test2_R1.fastq.gz	test2_R2.fastq.gz	hsap_45s	-0.6

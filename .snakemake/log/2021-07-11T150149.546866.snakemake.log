@@ -1,0 +1,3 @@
+FileNotFoundError in line 42 of /home/lie128/csiro/github/bismsmark/workflow/Snakefile:
+[Errno 2] No such file or directory: '../config/samples.tsv'
+  File "/home/lie128/csiro/github/bismsmark/workflow/Snakefile", line 42, in <module>
