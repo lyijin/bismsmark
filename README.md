@@ -24,7 +24,7 @@ README assumes that this repo will be cloned to `./bismsmark`, and assumes that 
 
 `cp ./config/slurm/config.yaml ~/.config/snakemake/slurm`
 
-## 2. run tests to check things are install correctly ##
+## 2. run tests to check installation ##
 
 `cd workflow`
 
@@ -50,7 +50,7 @@ Run this script from `workflow/`, i.e. `python3 scripts/compile_bismark_logs.py`
 
 ## Additional customisation ##
 
-qThe resources (RAM/cores) requested in `Snakefile` is optimised to work on the human genome (hg38/GRch38), and on my local `slurm` cluster. Remember that larger genomes will need more RAM, larger sequence files will need more time to be processed.
+The resources (RAM/cores) requested in `Snakefile` is optimised to work on the human genome (hg38/GRch38), and on my local `slurm` cluster. Remember that larger genomes will need more RAM, larger sequence files will need more time to be processed.
 
 To check resources consumed by jobs, use `sacct` with the `-S mmdd` flag, where `mmdd` == month, date e.g. `-S 0801`.
 
