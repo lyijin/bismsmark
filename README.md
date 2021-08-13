@@ -8,7 +8,7 @@ README assumes that this repo will be cloned to `./bismsmark`, and assumes that 
 
 `cd bismsmark`
 
-## 1. Use conda to install prerequisities ##
+## 1. Use conda to install prerequisites ##
 
 `conda create -c conda-forge -n bismsmark mamba`
 
@@ -44,7 +44,7 @@ Use the test files to guide naming choices.
 
 To be run AFTER the snakemake pipeline completes successfully.
 
-The Python script `compile_bismark_logs.py` scrapes some stats from bismark logs e.g. mapping rates, deduplication rates, ...
+The Python script `compile_bismark_logs.py` scrapes some stats from `bismark` logs e.g. mapping rates, deduplication rates, ...
 
 Run this script from `workflow/`, i.e. `python3 scripts/compile_bismark_logs.py`. No additional arguments needed, as the script hardcodes the folder names containing log files.
 
