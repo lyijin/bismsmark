@@ -188,11 +188,11 @@ rule map_vs_converted_genome:
         err='logs/02_map_vs_{genome}/{sample}.stderr'
     params:
         score_min=lambda wildcards: sample_details[wildcards.sample]['mapped_genome'][wildcards.genome]
-    threads: 5
+    threads: 6
     resources:
         time_min=4320,
-        mem_mb=64000,
-        cpus=16
+        mem_mb=80000,   # for hg38, ~12 GB per thread
+        cpus=16         # for hg38, ~3 CPUs per thread
     run:
         # key parameter "score_min" can be different depending on genome
         # also note each "thread" in --parallel needs 3 cores
@@ -231,10 +231,10 @@ rule extract_methylation_levels:
         err='logs/04_meth_extract_{genome}/{sample}.stderr'
     params:
         library_type=lambda wildcards: sample_details[wildcards.sample]['library_type']
-    threads: 4
+    threads: 6
     resources:
-        time_min=5760,
-        mem_mb=24000,
+        time_min=5040,
+        mem_mb=30000,
         cpus=12
     run:
         # note: "--parallel" is ~3x lower than cores requested on purpose;
