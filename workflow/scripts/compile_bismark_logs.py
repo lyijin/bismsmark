@@ -57,14 +57,14 @@ for rc in renamed_covs:
     bismark_stats[unique_id]['13|lambda_meth'] = 'NA'
     bismark_stats[unique_id]['14|pUC19_reads'] = 'NA'
     bismark_stats[unique_id]['15|pUC19_meth'] = 'NA'
-    if mapped_genome == 'hg38_lambda_puc':
-        n_reads = {'lambda': 0, 'pUC19_NEB': 0} 
-        n_meth = {'lambda': 0, 'pUC19_NEB': 0}
-        n_coverage = {'lambda': 0, 'pUC19_NEB': 0}
+    if mapped_genome == 'grch38p13_lambda_puc':
+        n_reads = {'lambda': 0, 'pUC19': 0} 
+        n_meth = {'lambda': 0, 'pUC19': 0}
+        n_coverage = {'lambda': 0, 'pUC19': 0}
         
         tsv_reader = csv.reader(gzip.open(rc, 'rt'), delimiter='\t')
         for line in tsv_reader:
-            if line[0] not in ['lambda', 'pUC19_NEB']: continue
+            if line[0] not in ['lambda', 'pUC19']: continue
             
             n_reads[line[0]] += 1
             n_meth[line[0]] += int(line[4])
@@ -75,10 +75,10 @@ for rc in renamed_covs:
             bismark_stats[unique_id]['13|lambda_meth'] = \
                 f"{n_meth['lambda'] / n_coverage['lambda'] * 100:.2f}%"
         
-        if n_reads['pUC19_NEB']:
-            bismark_stats[unique_id]['14|pUC19_reads'] = n_reads['pUC19_NEB']
+        if n_reads['pUC19']:
+            bismark_stats[unique_id]['14|pUC19_reads'] = n_reads['pUC19']
             bismark_stats[unique_id]['15|pUC19_meth'] = \
-                f"{n_meth['pUC19_NEB'] / n_coverage['pUC19_NEB'] * 100:.2f}%"
+                f"{n_meth['pUC19'] / n_coverage['pUC19'] * 100:.2f}%"
     
     # parse `deduplicate_bismark` logs. deduplication is SKIPPED for RRBS data,
     # hence the if/else to handle that
