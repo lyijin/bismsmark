@@ -24,7 +24,7 @@ workflow/
     |         (genome must be uncompressed FASTA)
     |-- {genome2}/
     |   +-- {genome2}.fa
-    |-- {genomeN}/
+    +-- {genomeN}/
         +-- {genomeN}.fa
 
 Usage notes
@@ -167,11 +167,16 @@ rule trim_reads:
     run:
         if params.library_type == 'swift':
             # the --clip_xx and --three_prime_clip_xx values are set based on
-            # https://github.com/FelixKrueger/Bismark/tree/master/Docs
+            # https://github.com/FelixKrueger/Bismark/blob/master/docs/bismark/library_types.md
+            # (this is a living document, check in occasionally)
             shell('trim_galore --paired {input.R1} {input.R2} --output_dir 01_trimmed_reads/'
                   ' --clip_r1 10 --clip_r2 15 --three_prime_clip_r1 10 --three_prime_clip_r2 10'
                   ' --cores {threads} > {log.out} 2> {log.err}')
-        elif params.library_type in ['emseq', 'bsseq']:
+        elif params.library_type == 'emseq':
+            shell('trim_galore --paired {input.R1} {input.R2} --output_dir 01_trimmed_reads/'
+                  ' --clip_r1 10 --clip_r2 10 --three_prime_clip_r1 10 --three_prime_clip_r2 10'
+                  ' --cores {threads} > {log.out} 2> {log.err}')
+        elif params.library_type == 'bsseq':
             shell('trim_galore --paired {input.R1} {input.R2} --output_dir 01_trimmed_reads/'
                   ' --cores {threads} > {log.out} 2> {log.err}')
 
@@ -194,10 +199,18 @@ rule map_vs_converted_genome:
         mem_mb=80000,   # for hg38, ~12 GB per thread
         cpus=16         # for hg38, ~3 CPUs per thread
     run:
-        # key parameter "score_min" can be different depending on genome
+        # non-default options:
+        # 1. key parameter "score_min" can be different depending on genome 
+        #    (usually 0.2, but can be 0.6 if more mismatches are tolerable)
+        # 2. baking in higher maximum insert size ("maxins"), as EM-seq reads 
+        #    can be longer than the default of 500. pushed this up to 1000.
+        #    set this back to 1000 if mapping takes too long. "minins" is 0
+        #    by default, can raise this too to reduce mapping time
+        #
         # also note each "thread" in --parallel needs 3 cores
         shell('bismark {input.genome} --bowtie2 -1 {input.R1} -2 {input.R2}'
               ' --score_min L,0,{params.score_min}'
+              ' --minins 0 --maxins 1000'
               ' --output_dir 02_map_vs_{wildcards.genome}'
               ' --temp_dir 02_map_vs_{wildcards.genome}'
               ' --parallel {threads} --gzip --bam > {log.out} 2> {log.err}')
@@ -239,14 +252,14 @@ rule extract_methylation_levels:
     run:
         # note: "--parallel" is ~3x lower than cores requested on purpose;
         #       each instance consumes multiple threads and cores
-        if params.library_type == 'swift':
+        if params.library_type in ['swift', 'emseq']:
             shell('bismark_methylation_extractor {input} --bedGraph'
                   ' --output 04_meth_extract_{wildcards.genome}'
                   ' --parallel {threads} --scaffolds --gzip'
                   ' > {log.out} 2> {log.err}')
-        elif params.library_type in ['emseq', 'bsseq']:
+        elif params.library_type == 'bsseq':
             # the --ignore_r2 values are set based on
-            # https://github.com/FelixKrueger/Bismark/tree/master/Docs
+            # https://github.com/FelixKrueger/Bismark/blob/master/docs/bismark/library_types.md
             shell('bismark_methylation_extractor {input} --bedGraph --ignore_r2 2'
                   ' --output 04_meth_extract_{wildcards.genome}'
                   ' --parallel {threads} --scaffolds --gzip'
