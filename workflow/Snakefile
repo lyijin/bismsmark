@@ -7,7 +7,7 @@ Asterisks denote which files are mandatory for autogeneration to work.
 Curly brackets == replaceable/optional strings.
 
 config/
-|-- samples.tsv            (*)
++-- samples.tsv            (*)
       (run `autogenerate_samples_tsv.py` after placing data in folders)
 
 workflow/
@@ -196,7 +196,7 @@ rule map_vs_converted_genome:
     threads: 6
     resources:
         time_min=4320,
-        mem_mb=80000,   # for hg38, ~12 GB per thread
+        mem_mb=128000,  # for hg38, ~12 GB per thread
         cpus=16         # for hg38, ~3 CPUs per thread
     run:
         # non-default options:
@@ -225,8 +225,8 @@ rule deduplicate_bam:
         err='logs/03_dedup_{genome}/{sample}.stderr'
     threads: 2
     resources:
-        time_min=1440,
-        mem_mb=128000,
+        time_min=720,
+        mem_mb=80000,
         cpus=3
     run:
         shell('deduplicate_bismark --bam --paired {input}'
